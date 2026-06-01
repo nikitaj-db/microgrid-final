@@ -82,3 +82,7 @@ module.exports = db;
 //  password: 'sonu',
 //  database: 'test',
 //});
+
+sequelize.authenticate()
+  .then(() => console.log("DB Connected"))
+  .catch(err => console.error("DB Error:", err));

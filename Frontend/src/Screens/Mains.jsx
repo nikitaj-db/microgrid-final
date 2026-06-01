@@ -2,10 +2,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect, useRef } from "react";
 import * as d3 from "d3";
-import KeyValueTable from "../Components/KeyValueTable";
-import MetricLineChart from "../Components/MetricLineChart";
-import { demoMainsLatest, makeHourlySeries } from "../utils/demoData";
-import { FORCE_ZERO_GRAPHS, zeroSeries } from "../utils/graphOverrides";
 
 const Mains = ({ BaseUrl }) => {
   const [data, setData] = useState({});
@@ -19,20 +15,15 @@ const Mains = ({ BaseUrl }) => {
 
   useEffect(() => {
     let interval = null;
+
     const fetchPowerData = async () => {
       try {
         const response = await fetch(`${BaseUrl}/mains/excel`);
         const result = await response.json();
         //  console.log(result)
-        const next =
-          Array.isArray(result) && result.length
-            ? result
-            : makeHourlySeries({ baseUnit: 0, baseKwh: 0, baseKwTotal: 0 });
-        setChartData(FORCE_ZERO_GRAPHS ? zeroSeries(next) : next);
+        setChartData(result);
       } catch (error) {
         console.error("Error fetching power data:", error);
-        const next = makeHourlySeries({ baseUnit: 0, baseKwh: 0, baseKwTotal: 0 });
-        setChartData(FORCE_ZERO_GRAPHS ? zeroSeries(next) : next);
       }
     };
 
@@ -64,14 +55,11 @@ const Mains = ({ BaseUrl }) => {
       }
       const data = await response.json();
       const sortedData = data.sort((a, b) => a.id - b.id);
-      // console.log(sortedData)
-      const latest = sortedData[sortedData.length - 1];
-      const hasAny = latest && typeof latest === "object" && Object.keys(latest).length > 0;
-      setData(hasAny ? latest : demoMainsLatest);
+      //  console.log(sortedData)
+      setData(sortedData[sortedData.length - 1] || {});
       setLoading(false);
     } catch (error) {
       console.error("Fetch Error:", error);
-      setData(demoMainsLatest);
       setLoading(false);
     }
     try {
@@ -92,7 +80,7 @@ const Mains = ({ BaseUrl }) => {
 
     const interval = setInterval(() => {
       fetchAlerts();
-    }, 5000);
+    }, 900000);
 
     return () => clearInterval(interval);
   }, []);
@@ -157,19 +145,13 @@ const Mains = ({ BaseUrl }) => {
       .scaleLinear()
       .domain([pastHour, currentHour])
       .range([0, width]);
+    const maxValue = d3.max(data, (d) => +d.kwh_reading) || 1;
 
-    const rawMax = d3.max(data, (d) => +d.kwh_reading);
-    const yMax = Number.isFinite(rawMax) && rawMax > 0 ? rawMax : 1;
-    const y = d3
-      .scaleLinear()
-      .domain([0, yMax])
+const y = d3
+  .scaleLinear()
+  .domain([0, maxValue])
       .nice()
       .range([height, 0]); // Note: correct order for y-scale
-
-    const format2 = (value) => {
-      const num = Number(value);
-      return Number.isFinite(num) ? num.toFixed(2) : "0.00";
-    };
 
     // Add axes
     svg
@@ -185,7 +167,11 @@ const Mains = ({ BaseUrl }) => {
       )
       .selectAll("text")
       .style("fill", "white")
-      .style("font-size", width > 500 ? "14px" : "10px");
+      .style("font-size", function () {
+        if (width > 1000) return "18px";
+        else if (width > 500) return "14px";
+        else return "10px";
+      });
 
     svg
       .append("g")
@@ -247,7 +233,7 @@ const Mains = ({ BaseUrl }) => {
           .line()
           .x((d) => x(d.hour))
           .y((d) => y(+d.kwh_reading))
-          .curve(d3.curveLinear)
+          .curve(d3.curveBasis)
       );
 
     // Add the shadow (area beneath curve)
@@ -265,7 +251,7 @@ const Mains = ({ BaseUrl }) => {
           .x((d) => x(d.hour))
           .y0(height) // Start from the bottom (X-axis line)
           .y1((d) => y(+d.kwh_reading))
-          .curve(d3.curveLinear)
+          .curve(d3.curveBasis)
       );
 
     // Create tooltip
@@ -291,9 +277,7 @@ const Mains = ({ BaseUrl }) => {
         tooltip.transition().duration(200).style("opacity", 0.9);
         tooltip
           .html(
-            `Hour: ${formatAMPM(dHover.hour)}, Power: ${format2(
-              dHover.kwh_reading
-            )}`
+            `Hour: ${formatAMPM(dHover.hour)}, Power: ${dHover.kwh_reading}`
           )
           .style("left", event.pageX + "px")
           .style("top", event.pageY - 28 + "px");
@@ -362,7 +346,7 @@ const Mains = ({ BaseUrl }) => {
           .line()
           .x((d) => x(d.hour))
           .y((d) => y(+d.kwh_reading))
-          .curve(d3.curveLinear)
+          .curve(d3.curveBasis)
       );
 
       svg.select(".shadow").attr(
@@ -372,7 +356,7 @@ const Mains = ({ BaseUrl }) => {
           .x((d) => x(d.hour))
           .y0(newHeight)
           .y1((d) => y(+d.kwh_reading))
-          .curve(d3.curveLinear)
+          .curve(d3.curveBasis)
       );
     }
 
@@ -390,12 +374,14 @@ const Mains = ({ BaseUrl }) => {
     return `${formattedHour} ${ampm}`;
   };
 
-  const utilisation_factor = !loading && (data.operating_hours / 1000) * 100;
-  const total_daily_kwh =
-    !loading && chartData.reduce((sum, row) => sum + row.kwh_reading, 0);
-
+  const utilisation_factor =
+  ((Number(data?.operating_hours) || 0) / 1000) * 100;
+  const total_daily_kwh = (chartData || []).reduce(
+  (sum, row) => sum + (Number(row?.kwh_reading) || 0),
+  0
+);
   return (
-    !loading && (
+    (
       <div className="p-4">
         {/* First Row Section */}
         <div className="grid grid-cols-2 gap-5">
@@ -413,10 +399,10 @@ const Mains = ({ BaseUrl }) => {
             <div className="absolute bottom-7 left-5 flex items-center max-w-[calc(100%-40px)] text-white">
               <div className="flex items-center">
                 <div>
-                  <p className="text-xs xl:text-sm text-[#959999] pb-1 m-0">
+                  <p className="text-xs xl:text-sm 2xl:text-lg text-[#959999] pb-1 m-0">
                     Status
                   </p>
-                  <p className="text-sm xl:text-base m-0">
+                  <p className="text-sm xl:text-base 2xl:text-xl m-0">
                     {data.voltagel_phase1 > 200 &&
                     data.voltagel_phase2 > 200 &&
                     data.voltagel_phase3 > 200 &&
@@ -442,44 +428,44 @@ const Mains = ({ BaseUrl }) => {
           <div className="grid grid-rows-[25%_70%] gap-4">
             <div className="grid grid-cols-4 gap-2 mt-1">
               <div className="bg-[#051E1C] rounded-lg flex flex-col items-center justify-center">
-                <p className="text-xs xl:text-sm text-[#C37C5A] font-medium text-center">
+                <p className="text-xs xl:text-sm 2xl:text-lg text-[#C37C5A] font-medium text-center">
                   Operating Hours
                 </p>
                 <p
-                  className="text-lg xl:text-xl font-semibold text-[#F3E5DE] pt-2"
+                  className="text-lg xl:text-xl 2xl:text-2xl font-semibold text-[#F3E5DE] pt-2"
                   id="operating-hours"
                 >
                   {data.operating_hours} hrs
                 </p>
               </div>
               <div className="bg-[#051E1C] rounded-lg flex flex-col items-center justify-center">
-                <p className="text-xs xl:text-sm text-[#C37C5A] font-medium text-center">
+                <p className="text-xs xl:text-sm 2xl:text-lg text-[#C37C5A] font-medium text-center">
                   Total Generation
                 </p>
                 <p
-                  className="text-lg xl:text-xl font-semibold text-[#F3E5DE] pt-2"
+                  className="text-lg xl:text-xl 2xl:text-2xl font-semibold text-[#F3E5DE] pt-2"
                   id="total-generation"
                 >
                   {data.kwh} kWh
                 </p>
               </div>
               <div className="bg-[#051E1C] rounded-lg flex flex-col items-center justify-center">
-                <p className="text-xs xl:text-sm text-[#C37C5A] font-medium text-center">
+                <p className="text-xs xl:text-sm 2xl:text-lg text-[#C37C5A] font-medium text-center">
                   Total Utilisation
                 </p>
                 <p
-                  className="text-lg xl:text-xl font-semibold text-[#F3E5DE] pt-2"
+                  className="text-lg xl:text-xl 2xl:text-2xl font-semibold text-[#F3E5DE] pt-2"
                   id="total-utilisation"
                 >
                   {data.kwh} kWh
                 </p>
               </div>
               <div className="bg-[#051E1C] rounded-lg flex flex-col items-center justify-center">
-                <p className="text-xs xl:text-sm text-[#C37C5A] font-medium text-center">
+                <p className="text-xs xl:text-sm 2xl:text-lg text-[#C37C5A] font-medium text-center">
                   Total Savings
                 </p>
                 <p
-                  className="text-lg xl:text-xl font-semibold text-[#F3E5DE] pt-2"
+                  className="text-lg xl:text-xl 2xl:text-2xl font-semibold text-[#F3E5DE] pt-2"
                   id="total-savings"
                 >
                   INR 0
@@ -493,14 +479,14 @@ const Mains = ({ BaseUrl }) => {
               ref={containerRef}
             >
               <div className="flex justify-between mb-4">
-                <p className="text-sm xl:text-base text-white">
+                <p className="text-sm xl:text-base 2xl:text-2xl text-white">
                   Energy Generated Today
                 </p>
-                <p className="text-xs xl:text-sm text-white">
+                <p className="text-xs xl:text-sm 2xl:text-lg text-white">
                   Total Daily Generation: {total_daily_kwh} kWh
                 </p>
               </div>
-              {/* <p className="text-xs xl:text-sm text-[#AFB2B2] mt-2 text-start">Updated 15 min ago</p> */}
+              {/* <p className="text-xs xl:text-sm 2xl:text-lg text-[#AFB2B2] mt-2 text-start">Updated 15 min ago</p> */}
               <div
                 className="mt-4 h-[250px] xl:h-[330px]"
                 id="my_dataviz"
@@ -512,96 +498,119 @@ const Mains = ({ BaseUrl }) => {
         <div className="grid grid-cols-2 gap-5 mt-2 ">
           {/* Left Section */}
           <div className="grid-item-left">
-            <div className="grid grid-cols-3 gap-2 mt-1">
+            <div className="grid grid-cols-3 gap-3 mt-1">
               <div className="grid grid-rows-2 mt-2">
-                <div className="bg-[#051e1c] rounded-md mb-2 p-2 gap-3 flex flex-col justify-between">
+                <div className="bg-[#051e1c] rounded-md mb-2 p-2 2xl:p-4 gap-3 flex flex-col justify-between">
                   <div className="flex items-center justify-between mb-2 xl:mb-7">
-                    <img src="assets/Icons.svg" alt="icon" />
+                    <img
+                      src="assets/Icons.svg"
+                      alt="icon"
+                      className="2xl:h-10"
+                    />
                     <h6
-                      className="text-[#F3E5DE] text-sm xl:text-base font-semibold"
+                      className="text-[#F3E5DE] text-sm xl:text-base 2xl:text-xl font-semibold"
                       id="power-generated"
                       alt="image"
                     >
-                      {(Number(data?.power_generated_yesterday) || 0).toFixed(
-                        2
-                      )}
+                      {Number(data.power_generated_yesterday)?.toFixed(2) ??
+                        "0.00"}
                     </h6>
                   </div>
-                  <p className="text-sm xl:text-base text-[#AFB2B2] text-start">
+                  <p className="text-sm xl:text-base 2xl:text-xl text-[#AFB2B2] text-start">
                     Power Generated Yesterday(kW)
                   </p>
                 </div>
-                <div className="bg-[#051e1c] rounded-md mb-2 p-2 gap-3 flex flex-col justify-between">
+                <div className="bg-[#051e1c] rounded-md mb-2 p-2 2xl:p-4 gap-3 flex flex-col justify-between">
                   <div className="flex items-center justify-between mb-2 xl:mb-7">
-                    <img src="assets/Icons (5).svg" alt="icon" />
+                    <img
+                      src="assets/Icons (5).svg"
+                      alt="icon"
+                      className="2xl:h-10"
+                    />
                     <h6
-                      className="text-[#F3E5DE] text-sm xl:text-base font-semibold"
+                      className="text-[#F3E5DE] text-sm xl:text-base 2xl:text-xl font-semibold"
                       id="hours"
                       alt="image"
                     >
                       {data.hours_operated_yesterday}
                     </h6>
                   </div>
-                  <p className="text-sm xl:text-base text-[#AFB2B2] text-start">
+                  <p className="text-sm xl:text-base 2xl:text-xl text-[#AFB2B2] text-start">
                     Hours Operated Yesterday
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-rows-2 mt-2">
-                <div className="bg-[#051e1c] rounded-md mb-2 p-2 flex flex-col justify-between">
+                <div className="bg-[#051e1c] rounded-md mb-2 p-2 2xl:p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between mb-2 xl:mb-7">
-                    <img src="assets/Icons (2).svg" alt="icon" />
+                    <img
+                      src="assets/Icons (2).svg"
+                      alt="icon"
+                      className="2xl:h-10"
+                    />
                     <h6
-                      className="text-[#F3E5DE] text-sm xl:text-base font-semibold"
+                      className="text-[#F3E5DE] text-sm xl:text-base 2xl:text-xl font-semibold"
                       id="utilisation"
                       alt="image"
                     >
                       {utilisation_factor.toFixed(2)}
                     </h6>
                   </div>
-                  <p className="text-sm xl:text-base text-[#AFB2B2] text-start">
+                  <p className="text-sm xl:text-base 2xl:text-xl text-[#AFB2B2] text-start">
                     Utilization Factor(%)
                   </p>
                 </div>
-                <div className="bg-[#051e1c] rounded-md mb-2 p-2 flex flex-col justify-between">
+                <div className="bg-[#051e1c] rounded-md mb-2 p-2 2xl:p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between mb-2 xl:mb-7">
-                    <img src="assets/Icons (6).svg" alt="icon" />
+                    <img
+                      src="assets/Icons (6).svg"
+                      alt="icon"
+                      className="2xl:h-10"
+                    />
                     <h6
-                      className="text-[#F3E5DE] text-sm xl:text-base font-semibold"
+                      className="text-[#F3E5DE] text-sm xl:text-base 2xl:text-xl font-semibold"
                       id="power"
                       alt="image"
                     >
                       {data.power_factor ? data.power_factor : 0}
                     </h6>
                   </div>
-                  <p className="text-sm xl:text-base text-[#AFB2B2] text-start">
+                  <p className="text-sm xl:text-base 2xl:text-xl text-[#AFB2B2] text-start">
                     Power Factor
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-rows-2 mt-2">
-                <div className="bg-[#051e1c] rounded-md mb-2 p-2 flex flex-col justify-between">
+                <div className="bg-[#051e1c] rounded-md mb-2 p-2 2xl:p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between mb-2 xl:mb-7">
-                    <img src="assets/Icons (3).svg" alt="icon" />
+                    <img
+                      src="assets/Icons (3).svg"
+                      alt="icon"
+                      className="2xl:h-10"
+                    />
                     <h6
-                      className="text-[#F3E5DE] text-sm xl:text-base font-semibold"
+                      className="text-[#F3E5DE] text-sm xl:text-base 2xl:text-xl font-semibold"
                       id="frequency"
                       alt="image"
                     >
                       {data.frequency ? data.frequency : 0}
                     </h6>
                   </div>
-                  <p className="text-sm xl:text-base text-[#AFB2B2] text-start">
+                  <p className="text-sm xl:text-base 2xl:text-xl text-[#AFB2B2] text-start">
                     Frequency (Hz)
                   </p>
                 </div>
-                <div className="bg-[#051e1c] rounded-md mb-2  p-2 flex flex-col justify-between">
+                <div className="bg-[#051e1c] rounded-md mb-2 p-2 2xl:p-4 flex flex-col justify-between">
                   <div className="flex items-center justify-between mb-2 xl:mb-7">
-                    <img src="assets/Icons (4).svg" alt="icon" />
+                    <img
+                      src="assets/Icons (4).svg"
+                      alt="icon"
+                      className="2xl:h-10"
+                    />
                     <h6
-                      className="text-[#F3E5DE] text-sm xl:text-base font-semibold"
+                      className="text-[#F3E5DE] text-sm xl:text-base 2xl:text-xl font-semibold"
                       id="breakerstatus"
                       alt="image"
                     >
@@ -615,19 +624,33 @@ const Mains = ({ BaseUrl }) => {
                         : "Off"}
                     </h6>
                   </div>
-                  <p className="text-sm xl:text-base text-[#AFB2B2] text-start">
+                  <p className="text-sm xl:text-base 2xl:text-xl text-[#AFB2B2] text-start">
                     Breaker Status
                   </p>
                 </div>
               </div>
+
+              {/* <div className="grid grid-cols-1 mt-2">
+                            <div className="bg-[#051e1c] rounded-md mb-2 p-2 py-4 flex flex-col justify-between">
+                                <p className="text-sm xl:text-base 2xl:text-xl text-white">Maintenance</p>
+                                <div className="m-0 p-0">
+                                    <p className="text-[#7A7F7F] text-sm xl:text-base 2xl:text-xl m-0">Last date:</p>
+                                    <p className="text-base xl:text-lg text-white pt-1 m-0" id="maintenance-last-date">{data.maintainance_last_date}</p>
+                                </div>
+                                <div className="m-0 p-0">
+                                    <p className="text-[#7A7F7F] text-sm xl:text-base 2xl:text-xl m-0">Next Due:</p>
+                                    <p className="text-base xl:text-lg text-white pt-1 m-0" id="next-due">{data.next_due}</p>
+                                </div>
+                            </div>
+                        </div> */}
             </div>
 
             <div className="grid mt-2 rounded-md">
               <div className="grid-item-left-down mt-2 bg-[#030F0E] mb-7 rounded-md">
                 <table className="table-style w-full border-collapse">
                   <thead className="bg-[#051E1C] text-[#68BFB6]">
-                    <tr className="text-xs xl:text-sm font-medium">
-                      <th className="whitespace-nowrap text-center p-5 xl:p-6 rounded-tl-lg"></th>
+                    <tr className="text-xs xl:text-sm 2xl:text-lg font-medium">
+                      <th className="whitespace-nowrap text-center p-5 xl:p-6 2xl:p-7 rounded-tl-lg"></th>
                       <th className="text-center font-medium">
                         Voltage (L-L)(V)
                       </th>
@@ -641,70 +664,70 @@ const Mains = ({ BaseUrl }) => {
                   </thead>
                   <tbody className="bg-[#030F0E] text-[#CACCCC]">
                     <tr>
-                      <td className="text-center p-3 rounded-l-lg text-sm xl:text-base">
+                      <td className="text-center p-3 2xl:p-5 rounded-l-lg text-sm xl:text-base 2xl:text-xl">
                         L1 Phase
                       </td>
                       <td
                         id="voltage-l-l-phase1"
-                        className="text-center p-3 text-sm xl:text-base"
+                        className="text-center p-3 text-sm xl:text-base 2xl:text-xl"
                       >
                         {data.voltagel_phase1}
                       </td>
                       <td
                         id="voltage-l-n-phase1"
-                        className="text-center p-3 text-sm xl:text-base"
+                        className="text-center p-3 text-sm xl:text-base 2xl:text-xl"
                       >
                         {data.voltagen_phase1}
                       </td>
                       <td
                         id="current-phase1"
-                        className="text-center p-3 text-sm xl:text-base"
+                        className="text-center p-3 text-sm xl:text-base 2xl:text-xl"
                       >
                         {data.current_phase1}
                       </td>
                     </tr>
                     <tr>
-                      <td className="text-center p-3 rounded-l-lg text-sm xl:text-base">
+                      <td className="text-center p-3 2xl:p-5 rounded-l-lg text-sm xl:text-base 2xl:text-xl">
                         L2 Phase
                       </td>
                       <td
                         id="voltage-l-l-phase2"
-                        className="text-center p-3 text-sm xl:text-base"
+                        className="text-center p-3 text-sm xl:text-base 2xl:text-xl"
                       >
                         {data.voltagel_phase2}
                       </td>
                       <td
                         id="voltage-l-n-phase2"
-                        className="text-center p-3 text-sm xl:text-base"
+                        className="text-center p-3 text-sm xl:text-base 2xl:text-xl"
                       >
                         {data.voltagen_phase2}
                       </td>
                       <td
                         id="current-phase2"
-                        className="text-center p-3 text-sm xl:text-base"
+                        className="text-center p-3 text-sm xl:text-base 2xl:text-xl"
                       >
                         {data.current_phase2}
                       </td>
                     </tr>
                     <tr>
-                      <td className="text-center p-3 rounded-bl-lg text-sm xl:text-base">
+                      <td className="text-center p-3 2xl:p-5 rounded-bl-lg text-sm xl:text-base 2xl:text-xl">
                         L3 Phase
                       </td>
                       <td
                         id="voltage-l-l-phase3"
-                        className="text-center p-3 text-sm xl:text-base"
+                        className="text-center p-3 text-sm xl:text-base 2xl:text-xl"
                       >
                         {data.voltagel_phase3}
                       </td>
                       <td
                         id="voltage-l-n-phase3"
-                        className="text-center p-3 text-sm xl:text-base"
+                        className="text-center p-3 text-sm xl:text-base 2xl:text-xl"
                       >
                         {data.voltagen_phase3}
                       </td>
                       <td
                         id="current-phase3"
-                        className="text-center p-3 rounded-br-lg text-sm xl:text-base"
+                        className="text-center p-3 rounded-br-lg text-sm xl:text-base 2xl:text-xl"
                       >
                         {data.current_phase3}
                       </td>
@@ -720,11 +743,11 @@ const Mains = ({ BaseUrl }) => {
               <div className="grid-item-left-down mt-2">
                 <div className="p-2">
                   <div className="text-white text-[20px] flex justify-between items-start">
-                    <div className="mb-4 text-base xl:text-lg font-bold">
+                    <div className="mb-4 text-base xl:text-lg 2xl:text-2xl font-bold">
                       Notifications
                     </div>
                     <div className="flex">
-                      <p className="flex items-center ml-4 text-[#AFB2B2] text-sm xl:text-base">
+                      <p className="flex items-center ml-4 text-[#AFB2B2] text-sm xl:text-base 2xl:text-xl">
                         Alert
                         <svg
                           className="ml-2"
@@ -750,7 +773,7 @@ const Mains = ({ BaseUrl }) => {
                         </svg>
                       </p>
 
-                      <p className="flex items-center ml-4 text-[#AFB2B2] text-sm xl:text-base">
+                      <p className="flex items-center ml-4 text-[#AFB2B2] text-sm xl:text-base 2xl:text-xl">
                         Shutdown
                         <svg
                           className="ml-2"
@@ -779,16 +802,16 @@ const Mains = ({ BaseUrl }) => {
                   </div>
                 </div>
                 <div
-                  className="bg-[#030F0E] rounded-lg pb-2.5 overflow-y-auto h-[240px] xl:h-[260px]"
+                  className="bg-[#030F0E] rounded-lg pb-2.5 overflow-y-auto h-[240px] xl:h-[260px] 2xl:h-[350px]"
                   style={{
                     scrollbarWidth: "thin",
                     scrollbarColor: "#0A3D38 #0F544C",
                   }}
                 >
-                  <table className="w-full border-collapse text-[#CACCCC] text-xs xl:text-sm">
+                  <table className="w-full border-collapse text-[#CACCCC] text-xs xl:text-sm 2xl:text-lg">
                     <thead className="bg-[#051E1C] text-left sticky top-0 z-20 text-[#68BFB6]">
-                      <tr className="text-xs xl:text-sm">
-                        <th className="px-3 xl:px-4 py-2 xl:py-3 rounded-tl-lg font-medium">
+                      <tr className="text-xs xl:text-sm 2xl:text-lg">
+                        <th className="px-3 xl:px-4 py-2 xl:py-3 2xl:px-5 2xl:py-4 rounded-tl-lg font-medium">
                           Fault Code
                         </th>
                         <th className="px-3 py-2 font-medium">Description</th>
@@ -808,7 +831,7 @@ const Mains = ({ BaseUrl }) => {
                         .reverse()
                         .map((item, index) => (
                           <tr key={index}>
-                            <td className="px-3 xl:px-4 py-4">
+                            <td className="px-3 xl:px-4 py-4 2xl:py-5">
                               {item.fault_code}
                             </td>
                             <td className="px-3 py-2">{item.description}</td>
@@ -844,8 +867,8 @@ const Mains = ({ BaseUrl }) => {
               <div className="grid-item-left-down mt-5 bg-[#030F0E] mb-7 rounded-lg pb-0">
                 <table className="table-style w-full border-collapse">
                   <thead className="thead-style bg-[#051E1C] text-[#68BFB6]">
-                    <tr className="text-xs xl:text-sm text-center font-medium">
-                      <th className="whitespace-nowrap p-4 rounded-tl-lg font-medium">
+                    <tr className="text-xs xl:text-sm 2xl:text-lg text-center font-medium">
+                      <th className="whitespace-nowrap p-4 rounded-tl-lg font-medium 2xl:p-5">
                         Power
                       </th>
                       <th className="p-2 font-medium">Phase 1</th>
@@ -854,8 +877,8 @@ const Mains = ({ BaseUrl }) => {
                     </tr>
                   </thead>
                   <tbody className="bg-[#030F0E] text-center text-[#CACCCC]">
-                    <tr className="text-sm xl:text-base">
-                      <td className="p-4 rounded-bl-lg">kW</td>
+                    <tr className="text-sm xl:text-base 2xl:text-xl">
+                      <td className="p-4 rounded-bl-lg 2xl:p-5">kW</td>
                       <td id="kW-phase1" className="p-2">
                         {data.kw_phase1}
                       </td>
@@ -866,7 +889,7 @@ const Mains = ({ BaseUrl }) => {
                         {data.kw_phase3}
                       </td>
                     </tr>
-                    {/* <tr className='text-sm xl:text-sm'>
+                    {/* <tr className='text-sm xl:text-sm 2xl:text-lg'>
                                         <td className="p-3 rounded-bl-lg">kVA</td>
                                         <td id="kVA-phase1" className="p-2">{data.kva_phase1}</td>
                                         <td id="kVA-phase2" className="p-2">{data.kva_phase2}</td>
@@ -874,16 +897,6 @@ const Mains = ({ BaseUrl }) => {
                                     </tr> */}
                   </tbody>
                 </table>
-              </div>
-
-              <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4 mb-7">
-                <KeyValueTable title="Mains (All Values)" data={data} excludeKeys={[]} />
-                <MetricLineChart
-                  title="Mains (Trends)"
-                  series={chartData}
-                  defaultMetric="unit_generation"
-                  xKey="hour"
-                />
               </div>
             </div>
           </div>

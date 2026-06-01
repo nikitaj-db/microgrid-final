@@ -6,6 +6,21 @@ const SolarTransducer = db.solar_transducer;
 const BASEURL = "http://localhost:5002/micro";
 const sequelize = db.sequelize;
 
+async function safeFetchJson(url, defaultValue, timeoutMs = 3000) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) return defaultValue;
+    const text = await response.text();
+    if (!text) return defaultValue;
+    return JSON.parse(text);
+  } catch (_err) {
+    return defaultValue;
+  }
+}
+
 module.exports = {
   //get all overview
   getOverview: async (req, res) => {
@@ -15,20 +30,16 @@ module.exports = {
         limit: 1,
       });
 
-      const response = await fetch(`${BASEURL}/solar`);
-      const data = await response.json();
-      const solar = data[0];
+      const solarList = await safeFetchJson(`${BASEURL}/solar`, []);
+      const solar = Array.isArray(solarList) ? solarList[0] || {} : {};
 
-      const responseg = await fetch(`${BASEURL}/genset`);
-      const data_g = await responseg.json();
-      const genset = data_g[0];
+      const gensetList = await safeFetchJson(`${BASEURL}/genset`, []);
+      const genset = Array.isArray(gensetList) ? gensetList[0] || {} : {};
 
-      const responsem = await fetch(`${BASEURL}/mains`);
-      const data_m = await responsem.json();
-      const mains = data_m[0];
+      const mainsList = await safeFetchJson(`${BASEURL}/mains`, []);
+      const mains = Array.isArray(mainsList) ? mainsList[0] || {} : {};
 
-      const records = await fetch(`${BASEURL}/records`);
-      const records_json = await records.json();
+      const records_json = await safeFetchJson(`${BASEURL}/records`, {});
 
       const alertCounts = await Alert.findAll({
         attributes: [
@@ -230,22 +241,27 @@ WHERE savings < 2000 AND genset_kwh <> 0;
         }
       );
 
-      const s_m_permonth = isNaN(result[0].total_saving)
+      const totalSavingsMains = Number(result?.[0]?.total_savings ?? 0);
+      const totalSavingsGenset = Number(result_2?.[0]?.total_savings ?? 0);
+      const savingsMainsToDate = Number(records_json?.savings_mains ?? 0);
+      const savingsGensetToDate = Number(records_json?.savings_genset ?? 0);
+
+      const s_m_permonth = isNaN(totalSavingsMains)
         ? 0
-        : result[0].total_saving;
+        : totalSavingsMains;
       const s_m_tillmonth =
         (isNaN(parseFloat(s_m_permonth)) ? 0 : parseFloat(s_m_permonth)) +
-        parseFloat(records_json.savings_mains);
+        (isNaN(savingsMainsToDate) ? 0 : savingsMainsToDate);
 
-      const s_g_permonth = isNaN(result_2[0].total_saving)
+      const s_g_permonth = isNaN(totalSavingsGenset)
         ? 0
-        : result_2[0].total_saving;
+        : totalSavingsGenset;
       const s_g_tillmonth =
         (isNaN(parseFloat(s_g_permonth)) ? 0 : parseFloat(s_g_permonth)) +
-        parseFloat(records_json.savings_genset);
+        (isNaN(savingsGensetToDate) ? 0 : savingsGensetToDate);
 
       return res.status(200).send({
-        overview,
+        overview: overview || {},
         solar,
         genset,
         mains,
@@ -254,10 +270,21 @@ WHERE savings < 2000 AND genset_kwh <> 0;
         s_m_tillmonth,
         s_g_permonth,
         s_g_tillmonth,
-        average,
+        average: average || [],
       });
     } catch (error) {
-      return res.status(400).send(error.message);
+      return res.status(200).send({
+        overview: {},
+        solar: {},
+        genset: {},
+        mains: {},
+        alert: { alert: 0, shutdown: 0 },
+        s_m_permonth: 0,
+        s_m_tillmonth: 0,
+        s_g_permonth: 0,
+        s_g_tillmonth: 0,
+        average: [],
+      });
     }
   },
 

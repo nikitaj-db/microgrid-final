@@ -5,8 +5,6 @@ import ProgressBar from "../Components/ProgressBar";
 import * as d3 from "d3";
 import KeyValueTable from "../Components/KeyValueTable";
 import MetricLineChart from "../Components/MetricLineChart";
-import { demoGensetLive, makeHourlySeries } from "../utils/demoData";
-import { FORCE_ZERO_GRAPHS, zeroSeries } from "../utils/graphOverrides";
 
 const Genset = ({ BaseUrl }) => {
   const [data, setData] = useState({ genset: {} });
@@ -31,15 +29,13 @@ const Genset = ({ BaseUrl }) => {
 
     const fetchPowerData = async () => {
       try {
-        const response = await fetch(`${BaseUrl}/live/genset/excel`);
+        const response = await fetch(`${BaseUrl}/genset/excel`);
         const result = await response.json();
         //  console.log(result)
-        const next = Array.isArray(result) && result.length ? result : makeHourlySeries({ baseUnit: 0, baseKwh: 0, baseKwTotal: 0 });
-        setChartData(FORCE_ZERO_GRAPHS ? zeroSeries(next) : next);
+        setChartData(Array.isArray(result) ? result : []);
       } catch (error) {
         console.error("Error fetching power data:", error);
-        const next = makeHourlySeries({ baseUnit: 0, baseKwh: 0, baseKwTotal: 0 });
-        setChartData(FORCE_ZERO_GRAPHS ? zeroSeries(next) : next);
+        setChartData([]);
       }
     };
 
@@ -60,25 +56,29 @@ const Genset = ({ BaseUrl }) => {
     return () => {
       clearTimeout(initialTimeout);
       if (interval) clearInterval(interval);
+    
     };
   }, []);
 
   const fetchGenset = async () => {
     try {
-      const response = await fetch(`${BaseUrl}/live/genset`);
+      const response = await fetch(`${BaseUrl}/genset`);
       if (!response.ok) {
         throw new Error(`HTTP error! Status: ${response.status}`);
       }
       const payload = await response.json();
-      const latest = payload?.genset || {};
-      const hasAny = latest && typeof latest === "object" && Object.keys(latest).length > 0;
-      setData({ genset: hasAny ? latest : demoGensetLive });
-      setLoading(false);
+      const latest = Array.isArray(payload) ? payload[0] : payload?.genset || payload || {};
+
+      setData({
+        genset: latest,
+      });
+
     } catch (error) {
       console.error("Fetch Error:", error);
-      setData({ genset: demoGensetLive });
+    } finally {
       setLoading(false);
     }
+
     try {
       const response = await fetch(`${BaseUrl}/alert`);
       if (!response.ok) {
@@ -953,19 +953,6 @@ const Genset = ({ BaseUrl }) => {
                 </table>
               </div>
 
-              <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4 mb-7">
-                <KeyValueTable
-                  title="Genset (All Live Values)"
-                  data={data.genset}
-                  excludeKeys={[]}
-                />
-                <MetricLineChart
-                  title="Genset (Trends)"
-                  series={chartData}
-                  defaultMetric="unit_generation"
-                  xKey="hour"
-                />
-              </div>
             </div>
           </div>
         </div>

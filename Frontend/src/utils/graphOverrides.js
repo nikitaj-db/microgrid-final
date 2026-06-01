@@ -1,4 +1,4 @@
-export const FORCE_ZERO_GRAPHS = true;
+export const FORCE_ZERO_GRAPHS = false;
 
 function isNumericLike(value) {
   const num = Number(value);

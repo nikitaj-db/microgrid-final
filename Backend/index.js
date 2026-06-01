@@ -1,3 +1,4 @@
+const WebSocket = require('ws');
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
@@ -28,14 +29,42 @@ app.use("/micro/records", recordsRoutes);
 app.use("/micro/alert", alertRoutes);
 app.use("/micro/live", liveRoutes);
 
-// Periodic transfer function
-// setInterval(async () => {
-//   console.log("Running periodic data transfer...");
-//   await transferAllData();
-// }, 30 * 1000);
 
 app.get("/", (req, res) => res.send("Hello User"));
 
-app.listen(PORT, "0.0.0.0", () =>
-  console.log(`Server Running on port: http://localhost:${PORT}`)
-);
+// app.listen(PORT, "0.0.0.0", () =>
+//   console.log(`Server Running on port: http://localhost:${PORT}`)
+// );
+
+const server = app.listen(5002, () => {
+  console.log("Server Running on port: http://localhost:5002");
+});
+
+const wss = new WebSocket.Server({ server });
+
+wss.on('connection', (ws) => {
+  console.log('WebSocket client connected');
+
+  ws.on('message', (message) => {
+    console.log('Received:', message.toString());
+
+    // send response back
+    ws.send('Message received by server');
+  });
+
+  ws.on('close', () => {
+    console.log('Client disconnected');
+  });
+});
+
+const db = require('./config/db');
+
+app.get('/test-alert', async (req, res) => {
+  try {
+    const data = await db.alert.findAll();
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
+});

@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import Chart from "chart.js/auto";
+
 import {
   calculatePercentages,
   calculateAverageCurrent,
@@ -11,8 +12,36 @@ import {
 } from "../Components/Calculation";
 import KeyValueTable from "../Components/KeyValueTable";
 import MetricLineChart from "../Components/MetricLineChart";
-import { demoOverview, makeHourlySeries } from "../utils/demoData";
 import { FORCE_ZERO_GRAPHS, zeroSeries } from "../utils/graphOverrides";
+
+const makeHourlySeries = () => {
+  return Array.from({ length: 24 }, (_, i) => ({
+    hour: i,
+    unit: null,
+    kwh: null,
+    kw_total: null,
+  }));
+};
+
+const EMPTY_OVERVIEW = {
+  solar: {
+    avg_total_generation: 0,
+    kwh: 0,
+  },
+  genset: {
+    avg_total_generation: 0,
+    kwh: 0,
+  },
+  mains: {
+    avg_total_generation: 0,
+    kwh: 0,
+  },
+  alert: {
+    alert: 0,
+    shutdown: 0,
+  },
+  average: [],
+};
 
 const Overview = ({ BaseUrl }) => {
   const myDatavizRef = useRef(null);
@@ -23,7 +52,7 @@ const Overview = ({ BaseUrl }) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   let resizeTimeout = null;
   const [dataAverage, setDataAverage] = useState([]);
-  const [alldata, setAllData] = useState({});
+  const [alldata, setAllData] = useState(EMPTY_OVERVIEW);
   const [chartData, setChartData] = useState([]);
   const chartRef = useRef();
   const modBus = true;
@@ -51,15 +80,10 @@ const Overview = ({ BaseUrl }) => {
         });
         const result = await response.json();
         // console.log(result)
-        const next =
-          Array.isArray(result) && result.length
-            ? result
-            : makeHourlySeries({ baseUnit: 0, baseKwh: 0, baseKwTotal: 0 });
-        setChartData(FORCE_ZERO_GRAPHS ? zeroSeries(next) : next);
+        setChartData(Array.isArray(result) ? result : []);
       } catch (error) {
         console.error("Error fetching power data:", error);
-        const next = makeHourlySeries({ baseUnit: 0, baseKwh: 0, baseKwTotal: 0 });
-        setChartData(FORCE_ZERO_GRAPHS ? zeroSeries(next) : next);
+        setChartData([]);
       }
     };
 
@@ -83,23 +107,26 @@ const Overview = ({ BaseUrl }) => {
     };
   }, []);
 
-  const fetchConfig = () => {
-    fetch(`${BaseUrl}/overview`)
-      .then((response) => response.json())
-      .then((data) => {
-        //   console.log(data)
-        const hasAny = data && typeof data === "object" && Object.keys(data).length > 0;
-        const next = hasAny ? data : demoOverview;
-        setAllData(next);
-        setDataAverage(next.average);
-        setLoading(false);
-      })
-      .catch((error) => {
-        console.error("Error fetching data:", error);
-        setAllData(demoOverview);
-        setDataAverage(demoOverview.average);
-        setLoading(false);
-      });
+  const fetchConfig = async () => {
+    try {
+      const response = await fetch(`${BaseUrl}/overview`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+
+      const next =
+        payload && typeof payload === "object" && Object.keys(payload).length
+          ? payload
+          : EMPTY_OVERVIEW;
+
+      setAllData(next);
+      setDataAverage(Array.isArray(next.average) ? next.average : []);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching overview:", error);
+      setAllData(EMPTY_OVERVIEW);
+      setDataAverage([]);
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -112,15 +139,15 @@ const Overview = ({ BaseUrl }) => {
     return () => clearInterval(interval);
   }, []);
 
-  const datas = !loading && {
-    solar: FORCE_ZERO_GRAPHS ? 0 : alldata.solar.avg_total_generation,
-    genset: FORCE_ZERO_GRAPHS ? 0 : alldata.genset.avg_total_generation,
-    mains: FORCE_ZERO_GRAPHS ? 0 : alldata.mains.avg_total_generation,
+  const datas = {
+    solar: Number(alldata?.solar?.avg_total_generation) || 0,
+    genset: Number(alldata?.genset?.avg_total_generation) || 0,
+    mains: Number(alldata?.mains?.avg_total_generation) || 0,
   };
   const chartdata = calculatePercentages(datas);
-  var current = !loading && calculateAverageCurrent(alldata);
-  var voltageL_L = !loading && calculateAverageVoltageL_L(alldata);
-  var voltageL_N = !loading && calculateAverageVoltageL_N(alldata);
+  const current = calculateAverageCurrent(alldata);
+  const voltageL_L = calculateAverageVoltageL_L(alldata);
+  const voltageL_N = calculateAverageVoltageL_N(alldata);
 
   const fetchData = () => {
     if (imageLoaded && !loading) {
@@ -1192,14 +1219,14 @@ const Overview = ({ BaseUrl }) => {
             <div className="h-2.5 w-2.5 bg-[#FFAF12] rounded-full"></div>
             <p className="text-[#7A7F7F] text-base xl:text-lg">Alerts</p>
             <div className="text-white text-xl xl:text-2xl" id="alerts">
-              {alldata.alert.alert}
+              {alldata.alert?.alert ?? 0}
             </div>
           </div>
           <div className="bg-[#051e1c] rounded-lg p-5 flex items-center justify-between">
             <div className="h-2.5 w-2.5 bg-red-600 rounded-full"></div>
             <p className="text-[#7A7F7F] text-base xl:text-lg">Shutdowns</p>
             <div className="text-white text-xl xl:text-2xl" id="shutdown">
-              {alldata.alert.shutdown}
+              {alldata.alert?.shutdown ?? 0}
             </div>
           </div>
         </div>
@@ -1261,31 +1288,6 @@ const Overview = ({ BaseUrl }) => {
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <MetricLineChart
-            title="Overview (Trends)"
-            series={chartData}
-            defaultMetric="unit_generation"
-            xKey="hour"
-          />
-          <div className="grid grid-cols-1 gap-4">
-            <KeyValueTable
-              title="Solar (All Values)"
-              data={alldata?.solar}
-              excludeKeys={[]}
-            />
-            <KeyValueTable
-              title="Genset (All Values)"
-              data={alldata?.genset}
-              excludeKeys={[]}
-            />
-            <KeyValueTable
-              title="Mains (All Values)"
-              data={alldata?.mains}
-              excludeKeys={[]}
-            />
-          </div>
-        </div>
       </div>
     </div>
   );

@@ -31,10 +31,10 @@ module.exports = (sequelize, DataTypes) => {
       unit_generated: {
         type: DataTypes.INTEGER,
       },
-      data_sent: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-      },
+      // data_sent: {
+      //   type: DataTypes.BOOLEAN,
+      //   defaultValue: false,
+      // },
     },
     {
       freezeTableName: true,

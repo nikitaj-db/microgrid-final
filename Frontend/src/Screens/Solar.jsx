@@ -4,8 +4,6 @@ import React, { useState, useEffect, useRef } from "react";
 import * as d3 from "d3";
 import KeyValueTable from "../Components/KeyValueTable";
 import MetricLineChart from "../Components/MetricLineChart";
-import { demoSolarLive, makeHourlySeries } from "../utils/demoData";
-import { FORCE_ZERO_GRAPHS, zeroSeries } from "../utils/graphOverrides";
 
 const Solar = ({ BaseUrl }) => {
   const [data, setData] = useState({ solar: {} });
@@ -29,18 +27,13 @@ const Solar = ({ BaseUrl }) => {
     let interval = null;
     const fetchPowerData = async () => {
       try {
-        const response = await fetch(`${BaseUrl}/live/solar/excel`);
+        const response = await fetch(`${BaseUrl}/solar/excel`);
         const result = await response.json();
         //console.log(result)
-        const next =
-          Array.isArray(result) && result.length
-            ? result
-            : makeHourlySeries({ baseUnit: 0, baseKwh: 0, baseKwTotal: 0 });
-        setChartData(FORCE_ZERO_GRAPHS ? zeroSeries(next) : next);
+        setChartData(Array.isArray(result) ? result : []);
       } catch (error) {
         console.error("Error fetching power data:", error);
-        const next = makeHourlySeries({ baseUnit: 0, baseKwh: 0, baseKwTotal: 0 });
-        setChartData(FORCE_ZERO_GRAPHS ? zeroSeries(next) : next);
+        setChartData([]);
       }
     };
 
@@ -64,35 +57,40 @@ const Solar = ({ BaseUrl }) => {
     };
   }, []);
 
-  const fetchSolar = async () => {
-    try {
-      const response = await fetch(`${BaseUrl}/live/solar`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      const payload = await response.json();
-      const latest = payload?.solar || {};
-      const hasAny = latest && typeof latest === "object" && Object.keys(latest).length > 0;
-      setData({ solar: hasAny ? latest : demoSolarLive });
-      setLoading(false);
-    } catch (error) {
-      console.error("Fetch Error:", error);
-      setData({ solar: demoSolarLive });
-      setLoading(false);
-    }
-    try {
-      const response = await fetch(`${BaseUrl}/alert`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-      const data = await response.json();
-      setAlertsData(data);
-      displayCounts(data);
-    } catch (error) {
-      console.error("Fetch Error:", error);
-    }
-  };
+ const fetchSolar = async () => {
+  try {
+    // Fetch solar data
+    const solarResponse = await fetch(`${BaseUrl}/solar`);
 
+    if (!solarResponse.ok) {
+      throw new Error(`HTTP error! Status: ${solarResponse.status}`);
+    }
+
+    const payload = await solarResponse.json();
+    const latest = Array.isArray(payload) ? payload[0] : payload?.solar || payload || {};
+
+    setData({
+      solar: latest,
+    });
+
+    // Fetch alert data
+    const alertResponse = await fetch(`${BaseUrl}/alert`);
+
+    if (!alertResponse.ok) {
+      throw new Error(`HTTP error! Status: ${alertResponse.status}`);
+    }
+
+    const alertData = await alertResponse.json();
+
+    setAlertsData(alertData);
+    displayCounts(alertData);
+
+    setLoading(false);
+  } catch (error) {
+    console.error("Fetch Error:", error);
+    setLoading(false);
+  }
+};
   useEffect(() => {
     fetchSolar();
     fetchConfig();
@@ -902,19 +900,6 @@ const Solar = ({ BaseUrl }) => {
                 </table>
               </div>
 
-              <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-4 mb-7">
-                <KeyValueTable
-                  title="Solar (All Live Values)"
-                  data={data.solar}
-                  excludeKeys={[]}
-                />
-                <MetricLineChart
-                  title="Solar (Trends)"
-                  series={chartData}
-                  defaultMetric="unit_generation"
-                  xKey="hour"
-                />
-              </div>
             </div>
           </div>
         </div>

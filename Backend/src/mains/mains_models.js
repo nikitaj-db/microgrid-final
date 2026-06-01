@@ -73,10 +73,10 @@ module.exports = (sequelize, DataTypes) => {
       voltagen_phase3: {
         type: DataTypes.DECIMAL(10, 2),
       },
-      data_sent: {
-        type: DataTypes.BOOLEAN,
-        defaultValue: false,
-      },
+      // data_sent: {
+      //   type: DataTypes.BOOLEAN,
+      //   defaultValue: false,
+      // },
     },
     {
       freezeTableName: true,

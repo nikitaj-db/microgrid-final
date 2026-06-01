@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --configLoader native",
-    "build": "vite build",
+    "start": "vite --configLoader native --host localhost --port 5173 --strictPort",
+    "dev": "vite --configLoader native --host localhost --port 5173 --strictPort",
+    "dev:backend": "vite --configLoader native --host localhost --port 5173 --strictPort --mode backend",
+    "build": "vite build --configLoader native",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview --host localhost --port 5173 --strictPort"
   },
   "dependencies": {
     "chart.js": "^4.5.0",
