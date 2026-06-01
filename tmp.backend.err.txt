@@ -1,1 +1,0 @@
-DB not configured (missing DB_NAME, DB_USER, DB_PASSWORD, DB_HOST). Skipping sequelize.sync(); DB-backed routes may fail.
